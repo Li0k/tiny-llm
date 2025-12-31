@@ -1,5 +1,6 @@
 import mlx.core as mx
-from .basics import softmax, linear
+
+from .basics import linear, softmax
 
 
 def scaled_dot_product_attention_simple(
@@ -9,7 +10,22 @@ def scaled_dot_product_attention_simple(
     scale: float | None = None,
     mask: mx.array | None = None,
 ) -> mx.array:
-    pass
+    # print shape of query, key, value
+    # print("Query shape:", query.shape)
+    # print("Key shape:", key.shape)
+    # print("Value shape:", value.shape)
+
+    # if scale is None:
+    #     scale = 1.0 / (query.shape[-1] ** 0.5)  # Default scaling factor
+    factor = mx.rsqrt(query.shape[-1]) if scale is None else scale
+
+    key_t = key.swapaxes(-1, -2)  # Transpose the last two dimensions
+    scores = mx.matmul(query, key_t) * factor
+    if mask is not None:
+        scores = scores + mask
+    attn_weights = softmax(scores, axis=-1)
+    output = mx.matmul(attn_weights, value)
+    return output
 
 
 class SimpleMultiHeadAttention:
@@ -22,7 +38,18 @@ class SimpleMultiHeadAttention:
         wv: mx.array,
         wo: mx.array,
     ):
-        pass
+        assert hidden_size % num_heads == 0
+        head_dim = hidden_size // num_heads
+
+        self.hidden_size = hidden_size
+        self.num_heads = num_heads
+        self.head_dim = head_dim
+        self.scale = mx.rsqrt(head_dim)
+
+        self.wq = wq
+        self.wk = wk
+        self.wv = wv
+        self.wo = wo
 
     def __call__(
         self,
@@ -31,7 +58,39 @@ class SimpleMultiHeadAttention:
         value: mx.array,
         mask: mx.array | None = None,
     ) -> mx.array:
-        pass
+        assert query.shape == key.shape == value.shape
+        N, L, E = query.shape
+
+        assert E == self.hidden_size
+
+        # The functionality to project inputs to Q/K/V has been moved to separate
+        def project_inputs(
+            input: mx.array,
+            w: mx.array,
+        ) -> mx.array:
+            return (
+                linear(input, w)
+                .reshape(N, L, self.num_heads, self.head_dim)
+                .transpose(0, 2, 1, 3)
+            )
+
+        projection_q = project_inputs(query, self.wq)
+
+        projection_k = project_inputs(key, self.wk)
+
+        projection_v = project_inputs(value, self.wv)
+
+        output = scaled_dot_product_attention_simple(
+            projection_q,
+            projection_k,
+            projection_v,
+            scale=self.scale,
+            mask=mask,
+        )
+
+        output = output.transpose(0, 2, 1, 3).reshape(N, L, E)
+
+        return linear(output, self.wo)
 
 
 def causal_mask(L: int, S: int, dtype: mx.Dtype) -> mx.array:
