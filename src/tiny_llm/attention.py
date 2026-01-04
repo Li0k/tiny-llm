@@ -94,7 +94,11 @@ class SimpleMultiHeadAttention:
 
 
 def causal_mask(L: int, S: int, dtype: mx.Dtype) -> mx.array:
-    pass
+    # mask = mx.full((L, S), float("-inf"), dtype=dtype)
+    mask = mx.tril(mx.ones((L, S), dtype=dtype), k=(S - L))
+    mask = mx.where(mask, mx.array(0), mx.array(float("-inf")))
+
+    return mask
 
 
 def scaled_dot_product_attention_grouped(
@@ -102,9 +106,41 @@ def scaled_dot_product_attention_grouped(
     key: mx.array,
     value: mx.array,
     scale: float | None = None,
-    mask: mx.array | str | None = None,
+    mask: mx.array | str | None = None,  # mask: N.. x H_q x L x S
 ) -> mx.array:
-    pass
+    factor = mx.rsqrt(query.shape[-1]) if scale is None else scale
+
+    H_q, L, D = query.shape[-3:]
+    H, S, _ = key.shape[-3:]
+
+    assert H_q % H == 0, "num_heads of query must be multiple of num_heads of key/value"
+    n_repeats = H_q // H
+
+    B = query.shape[:-3]
+    extended_shape = query.shape
+
+    query = query.reshape(*B, H, n_repeats, L, D)
+    key = key.reshape(*B, H, 1, S, D)
+    value = value.reshape(*B, H, 1, S, D)
+    key_t = key.swapaxes(-1, -2)
+    scores = mx.matmul(query, key_t) * factor
+
+    # print("Scores shape:", scores.shape)
+
+    # print("Mask shape:", mask.shape if mask is not None else None)
+
+    if mask is not None:
+        # mask = mx.broadcast_to(mask, (*B, H_q, L, S))
+        if mask == "causal":
+            mask = causal_mask(L, S, scores.dtype)
+            # mask = mask.reshape(*B, H, n_repeats, L, S)
+            scores = scores + mask
+        else:
+            mask = mask.reshape(*B, H, n_repeats, L, S)
+            scores = scores + mask
+    attn_weights = softmax(scores, axis=-1)
+    output = mx.matmul(attn_weights, value)
+    return output.reshape(extended_shape)
 
 
 def flash_attention(
