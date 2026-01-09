@@ -1,5 +1,6 @@
-import pytest
 import mlx.core as mx
+import pytest
+
 from .tiny_llm_base import *
 from .utils import *
 

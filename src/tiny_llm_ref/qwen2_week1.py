@@ -1,10 +1,12 @@
+from typing import Any
+
 import mlx.core as mx
-from .basics import linear, silu
+
 from .attention import scaled_dot_product_attention_grouped
+from .basics import linear, silu
+from .embedding import Embedding
 from .layer_norm import RMSNorm
 from .positional_encoding import RoPE
-from typing import Any
-from .embedding import Embedding
 from .quantize import dequantize_linear
 
 
