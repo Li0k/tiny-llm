@@ -8,6 +8,8 @@ class RMSNorm:
         self.weight = weight.astype(mx.float32)
 
     def __call__(self, x: mx.array) -> mx.array:
-        rms = torch.rsqrt((x * x).mean(dim=-1, keepdim=True) + eps)
+        x_dtype = x.dtype
+        x = x.astype(mx.float32)
+        rms = mx.rsqrt((x * x).mean(axis=-1, keepdims=True) + self.eps)
 
-        return (self.weight * x * rms).astype(x.dtype)
+        return (self.weight * x * rms).astype(x_dtype)
