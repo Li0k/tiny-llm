@@ -2,6 +2,9 @@
 requires = ["pdm-backend"]
 build-backend = "pdm.backend"
 
+[tool.pdm]
+includes = ["src"]
+
 [project]
 name = "tiny-llm"
 version = "0.1.0"
