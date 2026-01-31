@@ -1,3 +1,9 @@
+import sys
+from pathlib import Path
+
+# Add src to path for imports
+sys.path.insert(0, str(Path(__file__).parent / "src"))
+
 from mlx_lm import load
 import mlx_lm
 import mlx.core as mx

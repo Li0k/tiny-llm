@@ -1,8 +1,11 @@
+from math import log
+from typing import Callable
+
 import mlx.core as mx
 from mlx_lm.tokenizer_utils import TokenizerWrapper
+
 from .qwen2_week1 import Qwen2ModelWeek1
 from .qwen2_week2 import Qwen2ModelWeek2
-from typing import Callable
 
 
 def simple_generate(
@@ -12,7 +15,31 @@ def simple_generate(
     sampler: Callable[[mx.array], mx.array] | None,
 ) -> str:
     def _step(model, y):
-        pass
+        logits = model(y[None])
+        logits = logits[:, -1, :]  # last token logits
+        log_probs = logits - mx.logsumexp(
+            logits, keepdims=True
+        )  # for numerical stability
+        if sampler is None:
+            y = mx.argmax(log_probs, axis=-1)  # default greedy sampling
+        else:
+            y = sampler(log_probs)
+
+        return y
+
+    tokens = mx.array(
+        tokenizer.encode(prompt, add_special_tokens=False)
+    )  # List[int] to mx.array
+    detokenizer = tokenizer.detokenizer
+    detokenizer.reset()
+
+    while True:
+        token = _step(model, tokens)
+        tokens = mx.concat([tokens, token])  # Append new token
+        if token.item() == tokenizer.eos_token_id:
+            break
+        detokenizer.add_token(token.item())
+        print(detokenizer.last_segment, end="", flush=True)
 
 
 def simple_generate_with_kv_cache(
