@@ -31,4 +31,36 @@ NB_MODULE(_ext, m) {
         Returns:
             array: ``alpha * x + beta * y``
       )");
+
+    m.def(
+        "quantized_matmul",
+        &tiny_llm_ext::quantized_matmul,
+        "scales"_a,
+        "biases"_a,
+        "group_size"_a,
+        "bits"_a,
+        "a"_a,
+        "b"_a,
+        "transpose_b"_a = false,
+        nb::kw_only(),
+        "stream"_a = nb::none(),
+        R"(
+            Quantized matrix multiplication.
+
+            Computes ``a @ b.T`` when ``transpose_b=True`` using packed quantized
+            weights with per-group scale and bias.
+
+            Args:
+                scales (array): Per-group scales.
+                biases (array): Per-group biases.
+                group_size (int): Number of values per quantization group.
+                bits (int): Quantization bit width.
+                a (array): Activation matrix.
+                b (array): Packed quantized weight matrix.
+                transpose_b (bool): Whether to treat ``b`` as transposed.
+
+            Returns:
+                array: Quantized matmul result.
+        )"
+    );
 }

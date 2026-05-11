@@ -1,5 +1,8 @@
-import mlx.core as mx
 from typing import Any
+
+import mlx.core as mx
+
+from extensions import tiny_llm_ext
 
 
 def dequantize_linear(mx_layer: Any) -> mx.array:
@@ -48,7 +51,24 @@ def quantized_matmul(
     b: mx.array,
     transpose_b: bool = False,
 ) -> mx.array:
-    pass
+    # N, D = a.shape
+
+    *N, D = a.shape
+
+    a = a.reshape(-1, D)
+
+    a = mx.contiguous(a)
+    b = mx.contiguous(b)
+
+    return tiny_llm_ext.quantized_matmul(
+        scales=scales,
+        biases=biases,
+        group_size=group_size,
+        bits=bits,
+        a=a,
+        b=b,
+        transpose_b=transpose_b,
+    ).reshape(*N, -1)
 
 
 def quantized_linear(
@@ -56,4 +76,22 @@ def quantized_linear(
     w: QuantizedWeights,
     bias: mx.array | None = None,
 ) -> mx.array:
-    pass
+    # assert (
+    #     x.dtype == mx.float16
+    #     and w.scales.dtype == mx.float16
+    #     and w.biases.dtype == mx.float16
+    #     and w.weight.dtype == mx.uint32
+    # ), (
+    #     f"Expected x to be float16, scales and biases to be float16, and weight to be uint32, but got x: {x.dtype}, scales: {w.scales.dtype}, biases: {w.biases.dtype}, weight: {w.weight.dtype}"
+    # )
+
+    scales = w.scales.astype(x.dtype)
+    biases = w.biases.astype(x.dtype)
+
+    if bias is not None:
+        return (
+            quantized_matmul(scales, biases, w.group_size, w.bits, x, w.weight, True)
+            + bias
+        )
+    else:
+        return quantized_matmul(scales, biases, w.group_size, w.bits, x, w.weight, True)

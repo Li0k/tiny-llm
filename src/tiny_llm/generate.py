@@ -4,6 +4,7 @@ from typing import Callable
 import mlx.core as mx
 from mlx_lm.tokenizer_utils import TokenizerWrapper
 
+from .kv_cache import TinyKvFullCache
 from .qwen2_week1 import Qwen2ModelWeek1
 from .qwen2_week2 import Qwen2ModelWeek2
 
@@ -46,7 +47,38 @@ def simple_generate_with_kv_cache(
     model: Qwen2ModelWeek2, tokenizer: TokenizerWrapper, prompt: str
 ) -> str:
     def _step(model, y, offset, kv_cache):
-        pass
+        logits = model(y[None], offset, kv_cache)
+        logits = logits[:, -1, :]  # last token logits
+        log_probs = logits - mx.logsumexp(
+            logits, keepdims=True
+        )  # for numerical stability
+        # if sampler is None:
+        #     y = mx.argmax(log_probs, axis=-1)  # default greedy sampling
+        # else:
+        #     y = sampler(log_probs)
+
+        y = mx.argmax(log_probs, axis=-1)
+
+        return y
+
+    tokens = mx.array(tokenizer.encode(prompt, add_special_tokens=False))
+    detokenizer = tokenizer.detokenizer
+    detokenizer.reset()
+
+    kv_cache = [TinyKvFullCache() for _ in range(model.num_hidden_layers)]
+
+    # prefill the cache with the prompt
+    token = _step(model, tokens, 0, kv_cache)
+
+    # generate/decode loop
+    while True:
+        tokens = mx.concat([tokens, token])
+        if token.item() == tokenizer.eos_token_id:
+            break
+        detokenizer.add_token(token.item())
+        print(detokenizer.last_segment, end="", flush=True)
+
+        token = _step(model, token, tokens.size - 1, kv_cache)
 
 
 def speculative_generate(
