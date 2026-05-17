@@ -3,7 +3,7 @@ from typing import Any
 import mlx.core as mx
 from numpy import block, ma
 
-from .attention import scaled_dot_product_attention_grouped
+from .attention import flash_attention, scaled_dot_product_attention_grouped
 from .basics import linear, silu
 from .embedding import Embedding
 from .kv_cache import TinyKvCache
@@ -57,6 +57,8 @@ class Qwen2MultiHeadAttention:
         # RoPE
         self.rope = RoPE(head_dim, max_seq_len, theta, traditional=False)
 
+        self.use_flash_attention = use_flash_attention
+
     def __call__(
         self,
         x: mx.array,
@@ -91,13 +93,22 @@ class Qwen2MultiHeadAttention:
 
         k, v, seq_len, _ = cache.update_and_fetch(k, v)
 
-        x = scaled_dot_product_attention_grouped(
-            q.astype(mx.float32),
-            k.astype(mx.float32),
-            v.astype(mx.float32),
-            scale=self.scale,
-            mask=mask,
-        ).astype(x.dtype)
+        if self.use_flash_attention:
+            x = flash_attention(
+                q.astype(mx.float32),
+                k.astype(mx.float32),
+                v.astype(mx.float32),
+                scale=self.scale,
+                mask=mask,
+            ).astype(x.dtype)
+        else:
+            x = scaled_dot_product_attention_grouped(
+                q.astype(mx.float32),
+                k.astype(mx.float32),
+                v.astype(mx.float32),
+                scale=self.scale,
+                mask=mask,
+            ).astype(x.dtype)
 
         x = x.transpose(0, 2, 1, 3).reshape(B, L, self.hidden_size)
         return quantized_linear(x, self.wo)
