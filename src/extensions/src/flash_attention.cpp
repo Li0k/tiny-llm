@@ -306,7 +306,7 @@ void FlashAttention::eval_gpu(const std::vector<mx::array> &inputs, std::vector<
     const int L = q.shape()[1];
     const int S = k.shape()[1];
     const int E = q.shape()[2];
-    const int Br = 32;
+    const int Br = L == 1 ? 1 : 32;
     const int Bc = 32;
     const int Tr = (L + Br - 1) / Br;
     const int Tc = (S + Bc - 1) / Bc;

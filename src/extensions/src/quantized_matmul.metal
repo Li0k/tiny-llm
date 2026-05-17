@@ -41,20 +41,18 @@ template <typename T>
         int a_idx = i * N + group_idx * group_size;
         int b_idx = (j * N + group_idx * group_size) / packs_per_u32;
 
-
         for (int pack_idx = 0; pack_idx < u32_per_group; pack_idx++) {
             const uint32_t packed = b[b_idx];
+            sum += ((float)((packed >> 0) & pack_mask) * (float)scale + (float)bias) * (float)a[a_idx];
+            sum += ((float)((packed >> 4) & pack_mask) * (float)scale + (float)bias) * (float)a[a_idx + 1];
+            sum += ((float)((packed >> 8) & pack_mask) * (float)scale + (float)bias) * (float)a[a_idx + 2];
+            sum += ((float)((packed >> 12) & pack_mask) * (float)scale + (float)bias) * (float)a[a_idx + 3];
+            sum += ((float)((packed >> 16) & pack_mask) * (float)scale + (float)bias) * (float)a[a_idx + 4];
+            sum += ((float)((packed >> 20) & pack_mask) * (float)scale + (float)bias) * (float)a[a_idx + 5];
+            sum += ((float)((packed >> 24) & pack_mask) * (float)scale + (float)bias) * (float)a[a_idx + 6];
+            sum += ((float)((packed >> 28) & pack_mask) * (float)scale + (float)bias) * (float)a[a_idx + 7];
 
-            for (int lane = 0; lane < packs_per_u32; lane++) {
-                const uint32_t q = (packed >> (lane * bits)) & pack_mask;
-
-                const float a_val = (float)a[a_idx];
-                const float b_val = (float)q * (float)scale + (float)bias;
-
-                sum += a_val * b_val;
-                a_idx += 1;
-            }
-
+            a_idx += packs_per_u32;
             b_idx += 1;
         }
     }
