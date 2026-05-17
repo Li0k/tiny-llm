@@ -9,6 +9,11 @@
 #include "mlx/utils.h"
 #include "tiny_llm_ext.h"
 
+#ifdef _METAL_
+#include "mlx/backend/metal/device.h"
+#include "mlx/backend/metal/utils.h"
+#endif
+
 namespace tiny_llm_ext {
 mx::array flash_attention(const mx::array &q, const mx::array &k, const mx::array &v, const mx::array &mask,
                           const float scale, const bool is_causal, const int num_kv_heads, const int num_heads,
@@ -265,8 +270,75 @@ void FlashAttention::eval_cpu(const std::vector<mx::array> &inputs, std::vector<
     });
 }
 
+#ifdef _METAL_
 void FlashAttention::eval_gpu(const std::vector<mx::array> &inputs, std::vector<mx::array> &outputs) {
-    throw std::runtime_error("FlashAttention GPU not implemented yet.");
+    const auto &q = inputs[0];
+    const auto &k = inputs[1];
+    const auto &v = inputs[2];
+    const auto &mask = inputs[3];
+    auto &out = outputs[0];
+
+    out.set_data(mx::allocator::malloc(out.nbytes()));
+
+    auto &s = stream();
+    auto &d = mx::metal::device(s.device);
+
+    auto library = d.get_library("tiny_llm_ext");
+    auto kernel = d.get_kernel("flash_attention_f32_e128", library);
+
+    auto &compute_encoder = d.get_command_encoder(s.index);
+    compute_encoder.set_compute_pipeline_state(kernel);
+
+    compute_encoder.set_input_array(q, 0);
+    compute_encoder.set_input_array(k, 1);
+    compute_encoder.set_input_array(v, 2);
+    compute_encoder.set_input_array(mask, 3);
+    compute_encoder.set_output_array(out, 4);
+    compute_encoder.set_vector_bytes(mask.shape(), 5);
+    compute_encoder.set_vector_bytes(mask.strides(), 6);
+
+    if (!q.flags().row_contiguous || !k.flags().row_contiguous || !v.flags().row_contiguous ||
+        !mask.flags().row_contiguous || !out.flags().row_contiguous) {
+        throw std::runtime_error("flash_attention: inputs and output must be row contiguous");
+    }
+
+    const int N = q.shape()[0];
+    const int L = q.shape()[1];
+    const int S = k.shape()[1];
+    const int E = q.shape()[2];
+    const int Br = 32;
+    const int Bc = 32;
+    const int Tr = (L + Br - 1) / Br;
+    const int Tc = (S + Bc - 1) / Bc;
+    const int is_causal = static_cast<int>(is_causal_);
+
+    if (E > 128) {
+        throw std::runtime_error("flash_attention: GPU implementation supports E <= 128");
+    }
+
+    compute_encoder.set_bytes(is_causal, 7);
+    compute_encoder.set_bytes(N, 8);
+    compute_encoder.set_bytes(L, 9);
+    compute_encoder.set_bytes(S, 10);
+    compute_encoder.set_bytes(E, 11);
+    compute_encoder.set_bytes(num_kv_heads_, 12);
+    compute_encoder.set_bytes(num_heads_, 13);
+    compute_encoder.set_bytes(scale_, 14);
+    compute_encoder.set_bytes(Br, 15);
+    compute_encoder.set_bytes(Bc, 16);
+    compute_encoder.set_bytes(Tr, 17);
+    compute_encoder.set_bytes(Tc, 18);
+
+    size_t simd_width = kernel->threadExecutionWidth();
+    MTL::Size num_threadgroups = MTL::Size(N, Tr, 1);
+    MTL::Size num_threads_per_group = MTL::Size(Br, simd_width, 1);
+
+    compute_encoder.dispatch_threadgroups(num_threadgroups, num_threads_per_group);
 }
+#else
+void FlashAttention::eval_gpu(const std::vector<mx::array> &inputs, std::vector<mx::array> &outputs) {
+    throw std::runtime_error("FlashAttention has no GPU implementation.");
+}
+#endif
 
 }  // namespace tiny_llm_ext
