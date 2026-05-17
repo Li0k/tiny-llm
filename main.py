@@ -95,6 +95,20 @@ with mx.stream(mx.gpu if args.device == "gpu" else mx.cpu):
                 )
             else:
                 draft_tiny_llm_model = None
+        elif args.loader == "week3":
+            print(
+                f"Using week3 loader with thinking={args.enable_thinking} for {args.model}"
+            )
+            tiny_llm_model = models.dispatch_model(args.model, mlx_model, week=3)
+            if draft_mlx_model is not None:
+                print(f"Using draft model {args.draft_model}")
+                draft_tiny_llm_model = models.dispatch_model(
+                    args.draft_model,
+                    draft_mlx_model,
+                    week=3,
+                )
+            else:
+                draft_tiny_llm_model = None
         else:
             raise ValueError(f"Loader {args.loader} not supported")
     messages = [
@@ -113,7 +127,7 @@ with mx.stream(mx.gpu if args.device == "gpu" else mx.cpu):
         )
         if args.loader == "week1":
             simple_generate(tiny_llm_model, tokenizer, prompt, sampler=sampler)
-        elif args.loader == "week2":
+        elif args.loader in ("week2", "week3"):
             if draft_tiny_llm_model is not None:
                 speculative_generate(
                     draft_tiny_llm_model,
