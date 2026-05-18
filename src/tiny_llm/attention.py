@@ -135,10 +135,12 @@ def scaled_dot_product_attention_grouped(
         # mask = mx.broadcast_to(mask, (*B, H_q, L, S))
         if mask == "causal":
             mask = causal_mask(L, S, scores.dtype)
-            # mask = mask.reshape(*B, H, n_repeats, L, S)
             scores = scores + mask
         else:
-            mask = mask.reshape(*B, H, n_repeats, L, S)
+            # mask = mask.reshape(*B, H, n_repeats, L, S)
+            mask = mx.broadcast_to(mask, (*B, H_q, L, S)).reshape(
+                *B, H, n_repeats, L, S
+            )
             scores = scores + mask
     attn_weights = softmax(scores, axis=-1)
     output = mx.matmul(attn_weights, value)
