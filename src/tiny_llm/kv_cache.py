@@ -3,6 +3,8 @@ from typing import Optional
 
 import mlx.core as mx
 
+from .attention import causal_mask
+
 
 class TinyKvCache(ABC):
     @abstractmethod
@@ -35,6 +37,8 @@ class BatchingKvCache(TinyKvCache):
         self.max_active_requests = max_active_requests
         self.max_seq_len = max_seq_len
 
+        self.kv_caches: list[TinyKvCache | None] = [None] * max_active_requests
+
     def update_and_fetch(
         self,
         keys: mx.array,
@@ -42,13 +46,59 @@ class BatchingKvCache(TinyKvCache):
         mask_length: int | None = None,
         mask: mx.array | str | None = None,
     ) -> tuple[mx.array, mx.array, int, Optional[mx.array]]:
-        pass
+        B, H, L, D = keys.shape
+        assert keys.shape == values.shape
+        assert B == self.max_active_requests
+        if mask_length is None:
+            mask_length = L
+
+        data = []
+        for b in range(B):
+            kv_cache = self.kv_caches[b]
+            if kv_cache is None:
+                data.append(None)
+                continue
+            else:
+                key = keys[b : b + 1]
+                value = values[b : b + 1]
+
+                new_key, new_value, seq_len, _ = kv_cache.update_and_fetch(key, value)
+                data.append((new_key[0], new_value[0], seq_len))
+
+        # Smax
+        seq_len = max((item[2] for item in data if item is not None), default=0)
+
+        # output
+
+        batched_keys = mx.zeros((B, H, seq_len, D), dtype=keys.dtype)
+        batched_values = mx.zeros((B, H, seq_len, D), dtype=values.dtype)
+        batch_mask = mx.full((B, mask_length, seq_len), -mx.inf, dtype=keys.dtype)
+
+        for b, item in enumerate(data):
+            if item is None:
+                continue
+
+            key, value, request_seq_len = item
+            start = seq_len - request_seq_len
+
+            batched_keys[b, :, start:seq_len, :] = key
+            batched_values[b, :, start:seq_len, :] = value
+            batch_mask[b, :, start:seq_len] = causal_mask(
+                mask_length, request_seq_len, dtype=keys.dtype
+            )
+
+        return (
+            batched_keys,
+            batched_values,
+            None,
+            batch_mask.reshape(B, 1, mask_length, seq_len),
+        )
 
     def add_request(self, prefilled: TinyKvCache, id: int):
-        pass
+        self.kv_caches[id] = prefilled
 
     def remove_request(self, id: int):
-        pass
+        self.kv_caches[id] = None
 
 
 class TinyKvFullCache(TinyKvCache):
