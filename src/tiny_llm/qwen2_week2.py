@@ -78,12 +78,13 @@ class Qwen2MultiHeadAttention:
         k = quantized_linear(x, self.wk, self.bk).reshape(B, L, H, D)
         v = quantized_linear(x, self.wv, self.bv).reshape(B, L, H, D)
 
-        # apply RoPE
-        # offset = offsets[0]
         if isinstance(offsets, int):
             offset_slice = [slice(int(offsets), int(offsets + L))]
+        elif isinstance(offsets, mx.array):
+            offset_slice = [slice(int(i), int(i + L)) for i in offsets.tolist()]
         else:
             offset_slice = [slice(int(i), int(i + L)) for i in offsets]
+
         q = self.rope(q, offset=offset_slice)
         k = self.rope(k, offset=offset_slice)
 
@@ -91,7 +92,7 @@ class Qwen2MultiHeadAttention:
         k = k.transpose(0, 2, 1, 3)
         v = v.transpose(0, 2, 1, 3)
 
-        k, v, seq_len, _ = cache.update_and_fetch(k, v)
+        k, v, seq_len, mask = cache.update_and_fetch(k, v, mask_length=L, mask=mask)
 
         if self.use_flash_attention:
             x = flash_attention(
@@ -207,12 +208,12 @@ class Qwen2TransformerBlock:
     def __call__(
         self,
         x: mx.array,
-        offset: int,
+        offset: int | list[int] | mx.array,
         cache: TinyKvCache,
         mask: mx.array | str | None = None,
     ) -> mx.array:
         input_normed = self.input_layernorm(x)
-        attention_out = self.multi_head_attention(input_normed, [offset], cache, mask)
+        attention_out = self.multi_head_attention(input_normed, offset, cache, mask)
         post_attention = x + attention_out  # residual connection after attention
         post_attention_normed = self.post_attention_layernorm(post_attention)
         mlp_out = self.mlp(post_attention_normed)
@@ -282,7 +283,7 @@ class Qwen2ModelWeek2:
     def __call__(
         self,
         inputs: mx.array,
-        offset: int,
+        offset: int | list[int] | mx.array,
         cache: list[TinyKvCache],
     ) -> mx.array:
         # to embedding

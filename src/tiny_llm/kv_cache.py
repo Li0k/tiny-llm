@@ -119,7 +119,7 @@ class TinyKvFullCache(TinyKvCache):
             self.key_values = (key, value)
             B, H, S, D = key.shape
             self.offset = S
-            return key, value, key.shape[2], None
+            return key, value, key.shape[2], mask
         else:
             # decoding stage
             B, H, S, D = key.shape
