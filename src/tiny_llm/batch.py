@@ -1,9 +1,11 @@
+from datetime import datetime
+from typing import Callable
+
 import mlx.core as mx
 from mlx_lm.tokenizer_utils import TokenizerWrapper
+
 from .kv_cache import *
 from .qwen2_week2 import Qwen2ModelWeek2
-from typing import Callable
-from datetime import datetime
 
 
 def _step(model, y, offsets, kv_cache):
@@ -47,6 +49,17 @@ class Request:
             raise ValueError("prefill called after done")
         # TODO: in task 4, prefill the full request at once; in task 5, prefill a chunk at a time
 
+        token = _step(
+            self.model,
+            self.prefill_tokens[None],
+            [0],
+            self.kv_cache,
+        )
+
+        self.offset = self.prefill_tokens.size
+        self.is_prefill_done = True
+        self.decode_done(token.item(), False)
+
     def decode_done(self, token, update_offset=True):
         if self.is_done:
             raise ValueError("decode called after done")
@@ -54,6 +67,12 @@ class Request:
             self.is_done = True
             return
         # TODO: update the offset and add the token to the detokenizer
+
+        self.detokenizer.add_token(token)
+        self.next_token = token
+
+        if update_offset:
+            self.offset += 1
 
     def text(self):
         return self.detokenizer.text
@@ -134,7 +153,24 @@ def batch_generate(
                 made_progress = True
             if pending_prefill_request.is_prefill_done:
                 # Implement this: find an idle slot and add the request to the decode requests
-                pass
+                prefill_kv_cache = pending_prefill_request.kv_cache
+                found_slot = False
+
+                for i in range(batch_size):
+                    if decode_requests[i] is None:
+                        for prefill_cache, batch_cache in zip(
+                            prefill_kv_cache, kv_cache
+                        ):
+                            batch_cache.add_request(prefill_cache, i)
+
+                        decode_requests[i] = pending_prefill_request
+                        found_slot = True
+                        made_progress = True
+                        break
+
+                if found_slot:
+                    pending_prefill_request = None
+
             if made_progress:
                 _print_progress(
                     decode_requests,
@@ -149,13 +185,38 @@ def batch_generate(
         if any(req is not None for req in decode_requests):
             next_tokens = []
             offsets = []
-            # TODO: collect the next tokens and offsets from the decode requests
+            for req in decode_requests:
+                if req is not None:
+                    next_tokens.append(req.next_token)
+                    offsets.append(req.offset)
+                else:
+                    next_tokens.append(0)
+                    offsets.append(0)
+
+            next_tokens = mx.array(next_tokens)
             next_tokens = _step(model, next_tokens.reshape(-1, 1), offsets, kv_cache)
             for i in range(batch_size):
-                # TODO: check if the decode has finished by comparing EOS or the seqlength. If so,
-                # remove the request from the decode requests and add the result to the result list;
-                # otherwise, call `decode_done` to update the offset and add the token to the detokenizer
-                pass
+                req = decode_requests[i]
+                if req is not None:
+                    req.decode_done(next_tokens[i].item())
+                    remove_reason = None
+
+                    if req.is_done:
+                        remove_reason = "eos_token"
+                    elif req.offset >= max_seq_len:
+                        remove_reason = "max_seq_len"
+
+                    if remove_reason is not None:
+                        print(
+                            f"Removing request {i} due to {remove_reason}", flush=True
+                        )
+
+                        for layer_cache in kv_cache:
+                            layer_cache.remove_request(i)
+
+                        result.append((req.prompt_idx, req.text()))
+                        decode_requests[i] = None
+
             _print_progress(
                 decode_requests,
                 pending_prefill_request,
