@@ -47,18 +47,29 @@ class Request:
         """
         if self.is_prefill_done:
             raise ValueError("prefill called after done")
-        # TODO: in task 4, prefill the full request at once; in task 5, prefill a chunk at a time
+        tokens_to_prefill = min(
+            self.prefill_max_step,
+            self.prefill_tokens.size - self.offset,
+        )
 
         token = _step(
             self.model,
-            self.prefill_tokens[None],
-            [0],
+            self.prefill_tokens[self.offset : self.offset + tokens_to_prefill][None],
+            [self.offset],
             self.kv_cache,
         )
 
-        self.offset = self.prefill_tokens.size
-        self.is_prefill_done = True
-        self.decode_done(token.item(), False)
+        self.offset += tokens_to_prefill
+
+        # Materialize KV cache after each prefill chunk to cut off the lazy graph.
+        for i in self.kv_cache:
+            mx.eval(i.key_values[0])
+            mx.eval(i.key_values[1])
+
+        if self.offset == self.prefill_tokens.size:
+            self.is_prefill_done = True
+            mx.eval(token)
+            self.decode_done(token.item(), False)
 
     def decode_done(self, token, update_offset=True):
         if self.is_done:
