@@ -5,12 +5,12 @@ import mlx.core as mx
 from mlx_lm.tokenizer_utils import TokenizerWrapper
 
 from .kv_cache import TinyKvFullCache
-from .qwen2_week1 import Qwen2ModelWeek1
-from .qwen2_week2 import Qwen2ModelWeek2
+from .qwen3_week1 import Qwen3ModelWeek1
+from .qwen3_week2 import Qwen3ModelWeek2
 
 
 def simple_generate(
-    model: Qwen2ModelWeek1,
+    model: Qwen3ModelWeek1,
     tokenizer: TokenizerWrapper,
     prompt: str,
     sampler: Callable[[mx.array], mx.array] | None,
@@ -44,7 +44,7 @@ def simple_generate(
 
 
 def simple_generate_with_kv_cache(
-    model: Qwen2ModelWeek2, tokenizer: TokenizerWrapper, prompt: str
+    model: Qwen3ModelWeek2, tokenizer: TokenizerWrapper, prompt: str
 ) -> str:
     def _step(model, y, offset, kv_cache):
         logits = model(y[None], offset, kv_cache)
@@ -82,8 +82,8 @@ def simple_generate_with_kv_cache(
 
 
 def speculative_generate(
-    draft_model: Qwen2ModelWeek2,
-    model: Qwen2ModelWeek2,
+    draft_model: Qwen3ModelWeek2,
+    model: Qwen3ModelWeek2,
     draft_tokenizer: TokenizerWrapper,
     tokenizer: TokenizerWrapper,
     prompt: str,

@@ -60,6 +60,17 @@ def quantized_matmul(
     a = mx.contiguous(a)
     b = mx.contiguous(b)
 
+    if group_size != 64:
+        return mx.quantized_matmul(
+            a,
+            b,
+            scales,
+            biases,
+            group_size=group_size,
+            bits=bits,
+            transpose=transpose_b,
+        ).reshape(*N, -1)
+
     return tiny_llm_ext.quantized_matmul(
         scales=scales,
         biases=biases,

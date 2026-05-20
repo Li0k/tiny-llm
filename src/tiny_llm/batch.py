@@ -5,7 +5,6 @@ import mlx.core as mx
 from mlx_lm.tokenizer_utils import TokenizerWrapper
 
 from .kv_cache import *
-from .qwen2_week2 import Qwen2ModelWeek2
 
 
 def _step(model, y, offsets, kv_cache):
