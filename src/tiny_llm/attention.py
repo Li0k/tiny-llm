@@ -19,7 +19,8 @@ def scaled_dot_product_attention_simple(
 
     # if scale is None:
     #     scale = 1.0 / (query.shape[-1] ** 0.5)  # Default scaling factor
-    factor = mx.rsqrt(query.shape[-1]) if scale is None else scale
+    factor = mx.rsqrt(query.shape[-1]) if scale is None else mx.array(scale)
+    factor = factor.astype(query.dtype)
 
     key_t = key.swapaxes(-1, -2)  # Transpose the last two dimensions
     scores = mx.matmul(query, key_t) * factor
@@ -98,7 +99,7 @@ class SimpleMultiHeadAttention:
 def causal_mask(L: int, S: int, dtype: mx.Dtype) -> mx.array:
     # mask = mx.full((L, S), float("-inf"), dtype=dtype)
     mask = mx.tril(mx.ones((L, S), dtype=dtype), k=(S - L))
-    mask = mx.where(mask, mx.array(0), mx.array(float("-inf")))
+    mask = mx.where(mask, mx.array(0), mx.array(float("-inf"))).astype(dtype)
 
     return mask
 
@@ -110,7 +111,8 @@ def scaled_dot_product_attention_grouped(
     scale: float | None = None,
     mask: mx.array | str | None = None,  # mask: N.. x H_q x L x S
 ) -> mx.array:
-    factor = mx.rsqrt(query.shape[-1]) if scale is None else scale
+    factor = mx.rsqrt(query.shape[-1]) if scale is None else mx.array(scale)
+    factor = factor.astype(query.dtype)
 
     H_q, L, D = query.shape[-3:]
     H, S, _ = key.shape[-3:]
@@ -121,9 +123,9 @@ def scaled_dot_product_attention_grouped(
     B = query.shape[:-3]
     extended_shape = query.shape
 
-    query = query.reshape(*B, H, n_repeats, L, D)
-    key = key.reshape(*B, H, 1, S, D)
-    value = value.reshape(*B, H, 1, S, D)
+    query = query.reshape(*B, -1, H, n_repeats, L, D)
+    key = key.reshape(*B, -1, H, 1, S, D)
+    value = value.reshape(*B, -1, H, 1, S, D)
     key_t = key.swapaxes(-1, -2)
     scores = mx.matmul(query, key_t) * factor
 
@@ -138,9 +140,8 @@ def scaled_dot_product_attention_grouped(
             scores = scores + mask
         else:
             # mask = mask.reshape(*B, H, n_repeats, L, S)
-            mask = mx.broadcast_to(mask, (*B, H_q, L, S)).reshape(
-                *B, H, n_repeats, L, S
-            )
+            mask = mx.broadcast_to(mask, (*B, H_q, L, S))
+            mask = mask.reshape(*B, 1, H, n_repeats, L, S)
             scores = scores + mask
     attn_weights = softmax(scores, axis=-1)
     output = mx.matmul(attn_weights, value)

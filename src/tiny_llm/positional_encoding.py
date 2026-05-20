@@ -91,7 +91,7 @@ class RoPE:
         # merge back to original shape
         y = mx.stack([real, imag], axis=-1)
         y = y.reshape(N, S, H, D)
-        return y
+        return y.astype(x.dtype)
 
     def efficient_rope(self, x: mx.array, cos_basis: mx.array, sin_basis: mx.array):
         N, S, H, D = x.shape
@@ -107,4 +107,4 @@ class RoPE:
         y = mx.concat([real, imag], axis=-1)
         y = y.reshape(N, S, H, D)
 
-        return y
+        return y.astype(x.dtype)

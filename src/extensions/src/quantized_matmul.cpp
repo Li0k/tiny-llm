@@ -42,8 +42,8 @@ mx::array quantized_matmul(const mx::array &scales,         // Input array scale
     if (bits != 4) {
         throw std::runtime_error("quantized_matmul: bits must be 4");
     }
-    if (group_size != 64) {
-        throw std::runtime_error("quantized_matmul: group_size must be 64");
+    if (group_size != 64 && group_size != 128) {
+        throw std::runtime_error("quantized_matmul: group_size must be 64 or 128");
     }
     if (!transpose_b) {
         throw std::runtime_error("quantized_matmul: transpose_b must be true");
@@ -183,12 +183,16 @@ void QuantizedMatmul::eval_gpu(const std::vector<mx::array> &inputs, std::vector
     auto &d = mx::metal::device(s.device);
 
     const char *kernel_name;
-    if (a.dtype() == mx::float16) {
+    if (a.dtype() == mx::float16 && group_size_ == 64) {
         kernel_name = "quantized_matmul_w4a16_g64_f16";
-    } else if (a.dtype() == mx::bfloat16) {
+    } else if (a.dtype() == mx::bfloat16 && group_size_ == 64) {
         kernel_name = "quantized_matmul_w4a16_g64_bf16";
+    } else if (a.dtype() == mx::float16 && group_size_ == 128) {
+        kernel_name = "quantized_matmul_w4a16_g128_f16";
+    } else if (a.dtype() == mx::bfloat16 && group_size_ == 128) {
+        kernel_name = "quantized_matmul_w4a16_g128_bf16";
     } else {
-        throw std::runtime_error("quantized_matmul: a must be float16 or bfloat16 on GPU");
+        throw std::runtime_error("quantized_matmul: a must be float16 or bfloat16 and group_size must be 64 or 128 on GPU");
     }
 
     auto library = d.get_library("tiny_llm_ext");

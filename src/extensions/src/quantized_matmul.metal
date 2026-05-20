@@ -3,8 +3,8 @@
 
 using namespace metal;
 
-template <typename T>
-[[kernel]] void quantized_matmul_w4a16_g64(
+template <typename T, int group_size>
+[[kernel]] void quantized_matmul_w4a16(
     const device T* scales [[buffer(0)]],
     const device T* biases [[buffer(1)]],
     const device T* a [[buffer(2)]],
@@ -15,7 +15,6 @@ template <typename T>
     constant int& K [[buffer(7)]],
     uint2 gid [[thread_position_in_grid]]
 ) {
-    const int group_size = 64;
     const int bits = 4;
     const int groups_per_row = N / group_size;
     const int packs_per_u32 = 32 / bits;      // 8
@@ -60,5 +59,7 @@ template <typename T>
     out[i * K + j] = (T)sum;
 }
 
-instantiate_kernel("quantized_matmul_w4a16_g64_f16", quantized_matmul_w4a16_g64, float16_t);
-instantiate_kernel("quantized_matmul_w4a16_g64_bf16", quantized_matmul_w4a16_g64, bfloat16_t);
+instantiate_kernel("quantized_matmul_w4a16_g64_f16", quantized_matmul_w4a16, float16_t, 64);
+instantiate_kernel("quantized_matmul_w4a16_g64_bf16", quantized_matmul_w4a16, bfloat16_t, 64);
+instantiate_kernel("quantized_matmul_w4a16_g128_f16", quantized_matmul_w4a16, float16_t, 128);
+instantiate_kernel("quantized_matmul_w4a16_g128_bf16", quantized_matmul_w4a16, bfloat16_t, 128);
